@@ -1,0 +1,14 @@
+%power required equation
+
+
+%Pr = Tr*v;
+d = 1; %desnity
+S = 1; %area
+v = 1; %velocity
+Cd0 = 1; %parasitic drag
+L = 1; %lift
+w = 1; %weight = lift for level unacellerated flight
+AR = 1; %aspect ratio AR = b^2/S
+e = 1; %oswald efficency facor
+
+Pr = (0.5)*d*S*v^3*Cd0 + (w^2/(0.5*d*v*S))/(pi*e*AR);
