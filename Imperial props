@@ -1,0 +1,117 @@
+clc; clear;
+%% Inputs this is specifically for propeller aircraft in imperial
+Cd0 = 0.025;       % Parasitic drag
+e = 0.8;           % Oswald efficiency factor
+b = 35.8;          % Wingspan (ft)
+S = 174;           % Wing area (ft^2)
+AR = 0;            % Aspect ratio (auto-calc if 0)
+W = 2950;          % Weight (lbf)
+Pwr = 230;         % Horsepower (per engine)
+rho = 0.002377;    % slugs/ft^3 (standard sea level imperial)
+n = 0.8;           % Propeller efficiency
+SFC = 0.45;        % Specific fuel consumption (lb/hp/hr)
+
+%% Derived geometry
+if AR == 0
+    AR = b^2 / S;
+elseif S == 0
+    S = b^2 / AR;
+elseif b == 0
+    b = sqrt(AR * S);
+end
+
+k = 1 / (pi() * e * AR);
+
+%% Velocity sweep
+v = linspace(10, 500, 300);       % ft/s
+q = 0.5 * rho .* v.^2;            % Dynamic pressure
+Cl = W ./ (q .* S);               % Lift coefficient
+Cd = Cd0 + k .* Cl.^2;            % Drag coefficient
+LD = Cl ./ Cd;                    % Lift-to-drag ratio
+ThRq = W ./ LD;                   % Thrust required
+
+%%  Plot Thrust Required 
+figure;
+plot(v, ThRq, 'b', 'LineWidth', 1.8);
+xlabel("Velocity (ft/s)");
+ylabel("Thrust Required (lbf)");
+title("Thrust Required vs Velocity");
+grid on;
+
+%% Power required and available
+PwrReq = ThRq .* v;             % ft*lbf/s
+PwrReq_HP = PwrReq / 550;       % convert to HP
+PwrAvail_HP = n * Pwr;          % available power (HP)
+
+%% Find intersection numerically
+diffP = PwrReq_HP - PwrAvail_HP;
+idx = find(diffP(1:end-1).*diffP(2:end) <= 0); % all zero crossings
+
+if ~isempty(idx)
+    % Preallocate arrays for multiple intersections
+    v_intersect = zeros(size(idx));
+    P_intersect = PwrAvail_HP * ones(size(idx));
+    
+    for i = 1:length(idx)
+        % linear interpolation for each crossing
+        v_intersect(i) = interp1(diffP(idx(i):idx(i)+1), v(idx(i):idx(i)+1), 0);
+    end
+else
+    v_intersect = NaN;
+    P_intersect = NaN;
+end
+
+%% Plot Power Required vs Available
+figure;
+hold on;
+plot(v, PwrReq_HP, 'b', 'LineWidth', 1.8);
+yline(PwrAvail_HP, 'r--', 'LineWidth', 1.8);
+if ~isnan(v_intersect)
+    plot(v_intersect, P_intersect, 'ko', 'MarkerFaceColor', 'k', 'MarkerSize', 8); % intersection points
+    fprintf("Intersection velocities (ft/s): %s\n", num2str(v_intersect));
+    fprintf("Power at intersections (HP): %.2f\n", P_intersect(1));
+else
+    fprintf("No intersection found in this velocity range.\n");
+end
+xlabel("Velocity (ft/s)");
+ylabel("Power (HP)");
+title("Power Required vs Power Available");
+legend("Power Required", "Power Available", "Intersection", "Location", "best");
+grid on;
+
+%%  Drag Polar with Tangent at max (Cl/Cd) 
+Cl = linspace(-2.0, 2.0, 300);
+Cd = Cd0 + Cl.^2 .* k;
+eff = Cl ./ Cd;
+
+[maxEff, idxMax] = max(eff);
+Cl_opt = Cl(idxMax);
+Cd_opt = Cd(idxMax);
+
+% Tangent line slope
+m = Cl_opt / Cd_opt;
+xTangent = linspace(0, max(Cd)*1.1, 100);
+yTangent = m * xTangent;
+
+figure;
+hold on;
+plot(Cd, Cl, 'b', 'LineWidth', 1.8);               % drag polar
+plot(Cd_opt, Cl_opt, 'ro', 'MarkerFaceColor', 'r'); % max Cl/Cd point
+plot(xTangent, yTangent, '--k', 'LineWidth', 1.2);  % tangent line
+xlabel('Drag Coefficient, C_D');
+ylabel('Lift Coefficient, C_L');
+title('Drag Polar with Max (C_L/C_D) Tangent');
+legend('Drag Polar', 'Max C_L/C_D Point', 'Tangent Line', 'Location', 'northwest');
+grid on;
+axis equal;
+
+fprintf('Maximum (C_L/C_D): %.3f\n', maxEff);
+
+%%  L/D vs Cl plot 
+LD = Cl ./ Cd;
+figure;
+plot(LD, Cl, 'b', 'LineWidth', 1.8);
+xlabel("L/D Ratio");
+ylabel("Lift Coefficient");
+title("L/D Ratio vs Lift Coefficient");
+grid on;
