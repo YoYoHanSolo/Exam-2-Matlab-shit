@@ -1,0 +1,175 @@
+clc; clear;
+%% Inputs this is specifically for Jet aircraft in metric
+Cd0 = 0.032;       % Parasitic drag
+e = 0.87;           % Oswald efficiency factor
+b = 0;             % Wingspan (m)
+S = 47;           % Wing area (m^2)
+AR = 6.5;            % Aspect ratio 
+W = 103047;          % Weight (N)
+Pwr = 40298;         % Thrust (N) per engine
+rho_SL = 1.225; 
+rho = 1.225;         % kg/m^3 (standard sea level metric)
+Tavail_factor = (rho / rho_SL); 
+numE = 2;          % Number of engines
+%% Derived geometry
+if AR == 0
+    AR = b^2 / S;
+elseif S == 0
+    S = b^2 / AR;
+elseif b == 0
+    b = sqrt(AR * S);
+end
+
+k = 1 / (pi() * e * AR);
+
+%% Velocity sweep
+v = linspace(10, 500, 300);   % Velocity range (m/s)
+q = 0.5 * rho .* v.^2;        % Dynamic pressure (N/m^2)
+
+Cl = W ./ (q .* S);           % Lift coefficient
+Cd = Cd0 + k .* Cl.^2;        % Drag coefficient
+
+ThRq = q .* S .* Cd;          % Thrust required (N)
+ThAvail = Pwr * numE * Tavail_factor;   % Constant thrust available (N)
+
+%% Find intersections (lower and upper)
+diffT = ThRq - ThAvail;
+idx = find(diffT(1:end-1).*diffT(2:end) <= 0); % zero crossings
+
+if ~isempty(idx)
+    v_intersect = zeros(size(idx));
+    T_intersect = ThAvail * ones(size(idx));
+    for i = 1:length(idx)
+        v_intersect(i) = interp1(diffT(idx(i):idx(i)+1), v(idx(i):idx(i)+1), 0);
+    end
+else
+    v_intersect = NaN;
+    T_intersect = NaN;
+end
+
+%% Plot Thrust Required vs. Available
+Cl_half_over_Cd = sqrt(Cl) ./ Cd;
+[maxClhCd, idxMinThrust] = max(Cl_half_over_Cd);
+v_minThrust = v(idxMinThrust);
+T_minThrust = ThRq(idxMinThrust);
+fprintf("Velocity for minimum thrust required (max endurance): %.2f m/s\n", v_minThrust);
+fprintf("Maximum (CL^(1/2)/CD): %.3f\n", maxClhCd);
+
+
+figure;
+hold on;
+plot(v, ThRq, 'b', 'LineWidth', 1.8);
+yline(ThAvail, 'r--', 'LineWidth', 1.8);
+if ~isnan(v_intersect)
+    plot(v_intersect, T_intersect, 'ko', 'MarkerFaceColor', 'k', 'MarkerSize', 8);
+end
+plot(v_minThrust, T_minThrust, 'gs', 'MarkerFaceColor', 'g', 'MarkerSize', 8);
+text(v_minThrust + 10, T_minThrust, sprintf('Min Thrust @ %.1f m/s', v_minThrust), 'Color', 'g');
+xlabel("Velocity (m/s)");
+ylabel("Thrust (N)");
+title("Thrust Required vs Thrust Available (Jet Aircraft)");
+legend("Thrust Required", "Thrust Available", "Intersection", "Min Thrust", "Location", "best");
+grid on;
+
+fprintf("\nIntersection velocities (m/s): %s\n", num2str(v_intersect));
+%% Power required and available
+PwrReq = ThRq .* v;                % Power required (N*m/s = W)
+PwrReq_KW = PwrReq ./ 1000;        % convert to kW
+PwrAvail = ThAvail .* v;           % available power (W)
+PwrAvail_kW = PwrAvail ./ 1000;    % available power (kW)
+
+%% Find Intersection Points 
+diffP = PwrReq - PwrAvail;
+idxP = find(diffP(1:end-1).*diffP(2:end) <= 0); % zero crossings
+
+if ~isempty(idxP)
+    v_Pintersect = zeros(size(idxP));
+    P_intersect = zeros(size(idxP));
+    for i = 1:length(idxP)
+        v_Pintersect(i) = interp1(diffP(idxP(i):idxP(i)+1), v(idxP(i):idxP(i)+1), 0);
+        P_intersect(i) = interp1(v(idxP(i):idxP(i)+1), PwrReq_KW(idxP(i):idxP(i)+1), v_Pintersect(i));
+    end
+else
+    v_Pintersect = NaN;
+    P_intersect = NaN;
+end
+
+%% Plot Power Required vs Available 
+figure;
+hold on;
+plot(v, PwrReq_KW, 'b', 'LineWidth', 1.8);
+plot(v, PwrAvail_kW, 'r--', 'LineWidth', 1.8);
+if ~isnan(v_Pintersect)
+    plot(v_Pintersect, P_intersect, 'ko', 'MarkerFaceColor', 'k', 'MarkerSize', 8); % intersection points
+end
+xlabel("Velocity (m/s)");
+ylabel("Power (kW)");
+title("Power Required vs Power Available (Jet Aircraft)");
+legend("Power Required", "Power Available", "Intersections", "Location", "best");
+grid on;
+hold off;
+fprintf("\nPower Intersection velocities (m/s): %s\n", num2str(v_Pintersect));
+fprintf("Power at intersections (kW): %s\n", num2str(P_intersect));
+
+%% Drag Polar with Tangent at Max (Cl/Cd) 
+Cl = linspace(-1.5, 1.5, 300);       % narrower Cl range for jet
+Cd = Cd0 + k .* Cl.^2;               % drag polar equation
+eff = Cl ./ Cd;                      % efficiency (L/D)
+
+% Find maximum L/D point
+[maxEff, idxMax] = max(eff);
+Cl_opt = Cl(idxMax);
+Cd_opt = Cd(idxMax);
+
+% Tangent line at the max L/D point
+m = Cl_opt / Cd_opt;                  % slope of tangent
+xTangent = linspace(0, Cd_opt * 2, 100);
+yTangent = m * xTangent;
+
+% Plot 
+figure;
+hold on;
+plot(Cd, Cl, 'b', 'LineWidth', 1.8);               % drag polar
+plot(Cd_opt, Cl_opt, 'ro', 'MarkerFaceColor', 'r'); % max Cl/Cd point
+plot(xTangent, yTangent, '--k', 'LineWidth', 1.2);  % tangent line
+xlabel('Drag Coefficient, C_D');
+ylabel('Lift Coefficient, C_L');
+title('Drag Polar with Max (C_L/C_D) Tangent');
+legend('Drag Polar', 'Max C_L/C_D Point', 'Tangent Line', 'Location', 'northwest');
+grid on;
+
+% Scaled axes 
+xlim([0, Cd_opt * 2]);          % zoom in around the relevant Cd range
+ylim([min(Cl), max(Cl)]);       % keep full lift coefficient range
+axis normal;                    % remove axis equal (better proportions)
+
+fprintf('Maximum (C_L/C_D): %.3f\n', maxEff);
+fprintf('At C_L = %.3f, C_D = %.4f\n', Cl_opt, Cd_opt);
+
+%%  L/D vs Cl plot 
+LD = Cl ./ Cd;
+figure;
+plot(LD, Cl, 'b', 'LineWidth', 1.8);
+xlabel("L/D Ratio");
+ylabel("Lift Coefficient");
+title("L/D Ratio vs Lift Coefficient");
+grid on;
+
+%% Range
+Wi = 20000; % Initial weight (N)
+Fuel =  5000; % Fuel weight (N)
+Wf = Wi-Fuel; % Final weight (N)
+Tsfc = Fuel/(Pwr*numE);  % Thrust specific fuel consumption
+prefactor = 2 * sqrt(2/(rho * S));
+R_m = prefactor * (1/Tsfc) * maxClhCd * (sqrt(Wi) - sqrt(Wf));  % range in meters
+R_km = R_m / 1000;  % km
+fprintf('Range R = %.2f m (%.3f km)\n', R_m, R_km);
+
+%% Endurance 
+Wi =  6398.341;     % inital weight N 
+fuel =  1864.244;     % fuel remaining N
+Wf = (Wi-fuel);        % inital weight - fuel remaining
+Tsfc = Fuel/(Pwr*numE);  % Thrust specific fuel consumption
+E_sec = 1/Tsfc * maxEff * log(Wi/Wf);
+E_hr = E_sec / 3600; % max Endurance in hours
+fprintf("Max Aircraft Endurance %.3f\n", E_hr);
